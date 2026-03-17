@@ -20,6 +20,27 @@ async function run(): Promise<void> {
     }
 
     const octokit = github.getOctokit(githubToken);
+
+    // Verify the issue or pull request exists before attempting to add labels.
+    // This prevents errors when the action is triggered by events referencing
+    // issues/PRs that have since been deleted or transferred.
+    try {
+      await octokit.rest.issues.get({
+        owner,
+        repo,
+        issue_number: number
+      });
+    } catch (e) {
+      if (isRequestError(e) && e.status === 404) {
+        core.warning(
+          `Issue or pull request #${number} not found in ${owner}/${repo}. ` +
+            `It may have been deleted or transferred. Skipping label addition.`
+        );
+        return;
+      }
+      throw e;
+    }
+
     await octokit.rest.issues.addLabels({
       labels,
       owner,
@@ -32,6 +53,10 @@ async function run(): Promise<void> {
       core.setFailed(e.message);
     }
   }
+}
+
+function isRequestError(e: unknown): e is Error & {status: number} {
+  return e instanceof Error && typeof ((e as unknown) as Record<string, unknown>).status === 'number';
 }
 
 run();
